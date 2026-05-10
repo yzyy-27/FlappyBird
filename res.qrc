@@ -1,0 +1,21 @@
+<RCC>
+    <qresource prefix="/">
+        <file>pic/0.png</file>
+        <file>pic/1.png</file>
+        <file>pic/2.png</file>
+        <file>pic/3.png</file>
+        <file>pic/4.png</file>
+        <file>pic/5.png</file>
+        <file>pic/6.png</file>
+        <file>pic/7.png</file>
+        <file>pic/bg.png</file>
+        <file>pic/gameover.png</file>
+        <file>pic/ground.png</file>
+        <file>pic/nankai.png</file>
+        <file>pic/pipeDown.png</file>
+        <file>pic/pipeUp.png</file>
+        <file>pic/hard.png</file>
+        <file>pic/normal.png</file>
+        <file>pic/start.png</file>
+    </qresource>
+</RCC>
