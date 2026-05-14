@@ -32,10 +32,11 @@ private slots:
     void weatherLoop();
     void rainLoop();
     void blinkInvincible();
+    void shakeView();   // 震动函数（替代黄框）
 
 private:
     enum GameMode { NormalMode, HardMode };
-    enum WeatherType { Sunny, Rain, Fog, Magnetic };
+    enum WeatherType { Sunny, Rain, Fog, Magnetic, Rainbow };
 
     Ui::MainWindow *ui;
 
@@ -47,7 +48,8 @@ private:
     QGraphicsTextItem *weatherLabel;
     QGraphicsTextItem *livesLabel;
     QGraphicsTextItem *warningLabel;
-    QGraphicsTextItem *invincibleLabel;   // 无敌提示（仅切换天气时显示）
+    QGraphicsTextItem *invincibleLabel;
+    QGraphicsTextItem *nextLifeLabel;
     QGraphicsPixmapItem *fogOverlay;
 
     QPixmap bgPix, birdPix, pipeUpPix, pipeDownPix, menuBgPix, btnNormalPix, btnHardPix;
@@ -56,12 +58,15 @@ private:
     QTimer *weatherTimer;
     QTimer *rainTimer;
     QTimer *blinkTimer;
+    QTimer *shakeTimer;      // 震动定时器
 
     GameMode mode;
     bool gameOver;
     bool gameStarted;
     int score;
     int lives;
+    int nextLifeThreshold;
+    bool scoreDoubled;
 
     double yVelocity;
     double gravity;
@@ -81,13 +86,14 @@ private:
 
     bool invincible;
     int invincibleCounter;
-    bool showInvincibleText;   // 掉血无敌不显示文字
+    bool showInvincibleText;
 
     QPoint viewOriginalPos;
+    int shakeCounter;        // 震动剩余次数
 
-    static constexpr int WEATHER_DURATION_FRAMES = 70;
-    static constexpr int WARNING_FRAMES = 30;
-    static constexpr int INVINCIBLE_FRAMES = 150;
+    static constexpr int WEATHER_DURATION_FRAMES = 70;   // 7秒
+    static constexpr int WARNING_FRAMES = 30;            // 3秒
+    static constexpr int INVINCIBLE_FRAMES = 150;        // 3秒无敌
 
     void createMenu();
     void startGame(GameMode mode);
@@ -99,6 +105,8 @@ private:
     QString weatherDescription(WeatherType weather) const;
     void applyWeatherEffects();
     void setInvincible(int frames, bool showText);
+    void updateNextLifeDisplay();
+    void addScore(int points);
 };
 
 #endif // MAINWINDOW_H

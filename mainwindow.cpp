@@ -7,13 +7,15 @@
 #include <QGraphicsLineItem>
 #include <QPen>
 
+//游戏初始化
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    srand(time(nullptr));
+    srand(time(nullptr)); //随机种子
 
+    //图形场景和视图
     scene = new QGraphicsScene(this);
     scene->setSceneRect(0, 0, 400, 600);
     view = new QGraphicsView(scene, this);
@@ -21,8 +23,9 @@ MainWindow::MainWindow(QWidget *parent)
     setCentralWidget(view);
     setFixedSize(400, 600);
     setWindowTitle("Flappy Bird");
-    view->installEventFilter(this);
+    view->installEventFilter(this);// 处理菜单点击
 
+    //图片资源
     bgPix.load(":/pic/bg.png");
     birdPix.load(":/pic/0.png");
     pipeUpPix.load(":/pic/pipeUp.png");
@@ -31,39 +34,54 @@ MainWindow::MainWindow(QWidget *parent)
     btnNormalPix.load(":/pic/normal.png");
     btnHardPix.load(":/pic/hard.png");
 
+    //物理引擎
     gravity = 0.9;
     jumpPower = -10.0;
 
+    //主要定时器
     mainTimer = new QTimer(this);
     mainTimer->setInterval(20);
     connect(mainTimer, &QTimer::timeout, this, &MainWindow::gameLoop);
 
+    //天气定时器
     weatherTimer = new QTimer(this);
     weatherTimer->setInterval(100);
     connect(weatherTimer, &QTimer::timeout, this, &MainWindow::weatherLoop);
 
+    //雨滴定时器
     rainTimer = new QTimer(this);
     rainTimer->setInterval(40);
     connect(rainTimer, &QTimer::timeout, this, &MainWindow::rainLoop);
 
+    //无敌定时器
     blinkTimer = new QTimer(this);
     blinkTimer->setInterval(100);
     connect(blinkTimer, &QTimer::timeout, this, &MainWindow::blinkInvincible);
+
+    //预警震动定时器
+    shakeTimer = new QTimer(this);
+    shakeTimer->setInterval(30);   // 每30ms震动一次
+    connect(shakeTimer, &QTimer::timeout, this, &MainWindow::shakeView);
 
     weatherLabel = nullptr;
     livesLabel = nullptr;
     warningLabel = nullptr;
     invincibleLabel = nullptr;
+    nextLifeLabel = nullptr;
     fogOverlay = nullptr;
     viewOriginalPos = view->pos();
     magneticSpacePressed = false;
     invincible = false;
     invincibleCounter = 0;
     showInvincibleText = false;
+    nextLifeThreshold = 50;
+    scoreDoubled = false;
+    shakeCounter = 0;
 
-    createMenu();
+    createMenu();// 显示开始菜单
 }
 
+// 创建开始菜单
 MainWindow::~MainWindow()
 {
     delete ui;
@@ -75,16 +93,18 @@ void MainWindow::createMenu()
     weatherTimer->stop();
     rainTimer->stop();
     blinkTimer->stop();
-    scene->clear();
+    shakeTimer->stop();
+    scene->clear();//清空
     gameOver = true;
+    view->move(viewOriginalPos);  //复位
 
     scene->addPixmap(bgPix);
     scene->addPixmap(menuBgPix)->setPos(0, 0);
 
+    //按钮
     QGraphicsPixmapItem *btnNormal = scene->addPixmap(btnNormalPix);
     btnNormal->setPos(100, 360);
     btnNormal->setData(0, NormalMode);
-
     QGraphicsPixmapItem *btnHard = scene->addPixmap(btnHardPix);
     btnHard->setPos(100, 450);
     btnHard->setData(0, HardMode);
@@ -93,11 +113,11 @@ void MainWindow::createMenu()
     pipes.clear();
     currentWeather = Sunny;
     isWarningActive = false;
-    view->move(viewOriginalPos);
     magneticSpacePressed = false;
     invincible = false;
 }
 
+// 处理鼠标点击按钮，开始游戏
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == view && event->type() == QEvent::MouseButtonPress && gameOver)
@@ -114,6 +134,7 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     return QMainWindow::eventFilter(obj, event);
 }
 
+// 开始新游戏
 void MainWindow::startGame(GameMode selectedMode)
 {
     scene->clear();
@@ -126,11 +147,17 @@ void MainWindow::startGame(GameMode selectedMode)
     invincibleCounter = 0;
     showInvincibleText = false;
     blinkTimer->stop();
+    shakeTimer->stop();
+    nextLifeThreshold = 50;
+    scoreDoubled = false;
 
+    //鸟
     scene->addPixmap(bgPix);
     birdItem = scene->addPixmap(birdPix);
     birdItem->setPos(100, 200);
     birdItem->setZValue(50);
+    birdItem->setTransformOriginPoint(birdItem->boundingRect().center());
+    birdItem->setRotation(0);
 
     pipes.clear();
     pipeSpawnCounter = 0;
@@ -159,13 +186,13 @@ void MainWindow::startGame(GameMode selectedMode)
         weatherLabel = scene->addText("晴天");
         weatherLabel->setFont(font);
         weatherLabel->setDefaultTextColor(Qt::white);
-        weatherLabel->setPos(15, 10);
+        weatherLabel->setPos(15, 12);
         weatherLabel->setZValue(1000);
 
         livesLabel = scene->addText(QString("❤️ %1").arg(lives));
         livesLabel->setFont(font);
         livesLabel->setDefaultTextColor(Qt::white);
-        livesLabel->setPos(330, 10);
+        livesLabel->setPos(330, 12);
         livesLabel->setZValue(1000);
 
         QFont warnFont;
@@ -178,7 +205,6 @@ void MainWindow::startGame(GameMode selectedMode)
         warningLabel->setZValue(1000);
         warningLabel->setVisible(false);
 
-        // 无敌文字：放在生命值右侧，小号金色，加粗
         invincibleLabel = scene->addText("");
         QFont invFont;
         invFont.setPointSize(11);
@@ -189,6 +215,13 @@ void MainWindow::startGame(GameMode selectedMode)
         invincibleLabel->setZValue(1000);
         invincibleLabel->setVisible(false);
 
+        nextLifeLabel = scene->addText(QString("下一命: %1分").arg(nextLifeThreshold - score));
+        nextLifeLabel->setFont(invFont);
+        nextLifeLabel->setDefaultTextColor(Qt::white);
+        nextLifeLabel->setPos(15, 55);
+        nextLifeLabel->setZValue(1000);
+
+        //大雾遮挡（默认不可见）
         fogOverlay = scene->addPixmap(QPixmap(400, 600));
         QPixmap fogPix(400, 600);
         fogPix.fill(QColor(255, 255, 255, 180));
@@ -202,11 +235,53 @@ void MainWindow::startGame(GameMode selectedMode)
     mainTimer->start();
 }
 
+// 增加分数，得分翻倍，奖励生命
+void MainWindow::addScore(int points)
+{
+    if (scoreDoubled) points *= 2;
+    score += points;
+    while (score >= nextLifeThreshold)
+    {
+        lives++;
+        nextLifeThreshold += 50;
+        if (livesLabel) livesLabel->setPlainText(QString("❤️ %1").arg(lives));
+    }
+    updateNextLifeDisplay();
+}
+
+//下一命提示文字
+void MainWindow::updateNextLifeDisplay()
+{
+    if (nextLifeLabel)
+    {
+        int need = nextLifeThreshold - score;
+        if (need < 0) need = 0;
+        nextLifeLabel->setPlainText(QString("下一命: %1分").arg(need));
+    }
+}
+
+//震动效果：预警期间每30ms随机偏移视图
+void MainWindow::shakeView()
+{
+    if (!isWarningActive)
+    {
+        shakeTimer->stop();
+        view->move(viewOriginalPos);
+        return;
+    }
+    //随机偏移 -2~2 像素
+    int dx = (rand() % 5) - 2;
+    int dy = (rand() % 5) - 2;
+    view->move(viewOriginalPos.x() + dx, viewOriginalPos.y() + dy);
+}
+
+//游戏主循环
 void MainWindow::gameLoop()
 {
     if (gameOver) return;
     if (!gameStarted) return;
 
+    //无敌倒计时
     if (invincible)
     {
         invincibleCounter--;
@@ -232,7 +307,15 @@ void MainWindow::gameLoop()
         }
     }
 
-    // 速度更新
+    //小鸟旋转
+    if (birdItem)
+    {
+        double angle = yVelocity * 2.5;
+        angle = qBound(-30.0, angle, 30.0);
+        birdItem->setRotation(angle);
+    }
+
+    //速度更新
     if (mode == HardMode && currentWeather == Magnetic)
     {
         const double UP_ACC = -0.4;
@@ -252,8 +335,7 @@ void MainWindow::gameLoop()
     else
     {
         double currentGravity = gravity;
-        if (mode == HardMode && currentWeather == Rain)
-            currentGravity = 1.05;
+        if (mode == HardMode && currentWeather == Rain) currentGravity = 1.05;
         yVelocity += currentGravity;
     }
 
@@ -265,6 +347,7 @@ void MainWindow::gameLoop()
         return;
     }
 
+    //生成管道
     pipeSpawnCounter++;
     if (pipeSpawnCounter >= pipeSpawnInterval)
     {
@@ -272,6 +355,7 @@ void MainWindow::gameLoop()
         pipeSpawnCounter = 0;
     }
 
+    //管道移动，计分，删除
     for (int i = 0; i < pipes.size(); ++i)
     {
         QGraphicsPixmapItem *pipe = pipes[i];
@@ -291,10 +375,12 @@ void MainWindow::gameLoop()
             fogOverlay->setVisible(false);
         }
 
-        if (pipe->x() < 100 && pipe->data(1).toInt() == 0)
+
+        int isUpPipe = pipe->data(2).toInt();
+        if (pipe->x() < 100 && pipe->data(1).toInt() == 0 && isUpPipe == 1)
         {
-            pipe->setData(1, 1);
-            score++;
+            pipe->setData(1, 1);  // 已计分
+            addScore(1);          // 一组加1分
         }
 
         if (pipe->x() < -100)
@@ -306,6 +392,7 @@ void MainWindow::gameLoop()
         }
     }
 
+    //碰撞检测
     if (!invincible)
     {
         for (auto pipe : pipes)
@@ -318,7 +405,8 @@ void MainWindow::gameLoop()
         }
     }
 
-    if (view->pos() != viewOriginalPos)
+    //视图复位
+    if (view->pos() != viewOriginalPos && !isWarningActive)
         view->move(viewOriginalPos);
 
     if (mode == HardMode)
@@ -328,10 +416,11 @@ void MainWindow::gameLoop()
             QString wname;
             switch (currentWeather)
             {
-            case Sunny: wname = "晴天"; break;
-            case Rain:  wname = "暴雨"; break;
-            case Fog:   wname = "大雾"; break;
-            case Magnetic: wname = "磁场 (按住空格下降)"; break;
+            case Sunny: wname = "☀️晴天"; break;
+            case Rain:  wname = "🌧️ 暴雨"; break;
+            case Fog:   wname = "🌫️大雾"; break;
+            case Magnetic: wname = " 🧲磁场紊乱 (按住空格下降)"; break;
+            case Rainbow: wname = "彩虹 🌈 得分翻倍"; break;
             }
             weatherLabel->setPlainText(wname);
         }
@@ -340,6 +429,7 @@ void MainWindow::gameLoop()
     }
 }
 
+//管道生成
 void MainWindow::spawnPipe()
 {
     const int PIPE_HEIGHT = 320;
@@ -351,19 +441,24 @@ void MainWindow::spawnPipe()
     }
     int gapY = rand() % 120 + 120;
 
+    //上
     QGraphicsPixmapItem *up = scene->addPixmap(pipeUpPix);
-    up->setData(1, 0);
+    up->setData(1, 0);   // 计分标记
+    up->setData(2, 1);   // 标记为上管道
     up->setPos(400, gapY - PIPE_HEIGHT);
     up->setZValue(10);
     pipes.append(up);
 
+    //下
     QGraphicsPixmapItem *down = scene->addPixmap(pipeDownPix);
     down->setData(1, 0);
+    down->setData(2, 0);   // 下管道，不计分
     down->setPos(400, gapY + gap);
     down->setZValue(10);
     pipes.append(down);
 }
 
+//死亡处理
 void MainWindow::killPlayer()
 {
     if (mode == NormalMode)
@@ -373,6 +468,7 @@ void MainWindow::killPlayer()
         weatherTimer->stop();
         rainTimer->stop();
         blinkTimer->stop();
+        shakeTimer->stop();
         QMessageBox::information(this, "游戏结束", QString("得分：%1").arg(score));
         createMenu();
     }
@@ -390,12 +486,14 @@ void MainWindow::killPlayer()
             weatherTimer->stop();
             rainTimer->stop();
             blinkTimer->stop();
+            shakeTimer->stop();
             QMessageBox::information(this, "游戏结束", QString("最终得分：%1").arg(score));
             createMenu();
         }
     }
 }
 
+//复活
 void MainWindow::resetAfterDeath()
 {
     if (birdItem)
@@ -403,10 +501,10 @@ void MainWindow::resetAfterDeath()
     yVelocity = 0;
     gameStarted = true;
     magneticSpacePressed = false;
-    // 掉血后无敌0.5秒，不显示文字
     setInvincible(25, false);
 }
 
+//设置无敌状态
 void MainWindow::setInvincible(int frames, bool showText)
 {
     invincible = true;
@@ -429,6 +527,7 @@ void MainWindow::setInvincible(int frames, bool showText)
     if (birdItem) birdItem->setOpacity(1.0);
 }
 
+//闪烁
 void MainWindow::blinkInvincible()
 {
     if (!invincible || !birdItem)
@@ -440,6 +539,7 @@ void MainWindow::blinkInvincible()
     birdItem->setOpacity(op == 1.0 ? 0.4 : 1.0);
 }
 
+//天气循环
 void MainWindow::weatherLoop()
 {
     if (gameOver || mode != HardMode) return;
@@ -458,6 +558,8 @@ void MainWindow::weatherLoop()
             isWarningActive = false;
             changeWeather(pendingWeather);
             if (warningLabel) warningLabel->setVisible(false);
+            shakeTimer->stop();
+            view->move(viewOriginalPos); // 复位视图
         }
         return;
     }
@@ -465,20 +567,35 @@ void MainWindow::weatherLoop()
     weatherDurationCounter++;
     if (weatherDurationCounter < WEATHER_DURATION_FRAMES) return;
 
-    int rnd = rand() % 3;
+    int rnd = rand() % 100;
     WeatherType newWeather;
-    switch (rnd)
+    if (rnd < 2)
+        newWeather = Rainbow;
+    else
     {
-    case 0: newWeather = Rain; break;
-    case 1: newWeather = Fog; break;
-    default: newWeather = Magnetic; break;
+        int type = rand() % 3;
+        switch (type)
+        {
+        case 0: newWeather = Rain; break;
+        case 1: newWeather = Fog; break;
+        default: newWeather = Magnetic; break;
+        }
     }
     if (newWeather == currentWeather)
-        newWeather = (currentWeather == Rain) ? Fog : (currentWeather == Fog) ? Magnetic : Rain;
+    {
+        int rnd2 = rand() % 3;
+        switch (rnd2)
+        {
+        case 0: newWeather = Rain; break;
+        case 1: newWeather = Fog; break;
+        default: newWeather = Magnetic; break;
+        }
+    }
 
     startWeatherWarning(newWeather);
 }
 
+//天气预警
 void MainWindow::startWeatherWarning(WeatherType weather)
 {
     if (warningLabel)
@@ -490,16 +607,19 @@ void MainWindow::startWeatherWarning(WeatherType weather)
     isWarningActive = true;
     warningCounter = WARNING_FRAMES;
     pendingWeather = weather;
+    // 启动震动（每30ms一次）
+    shakeTimer->start();
 }
 
+//切换天气
 void MainWindow::changeWeather(WeatherType newWeather)
 {
     currentWeather = newWeather;
     weatherDurationCounter = 0;
+    scoreDoubled = (newWeather == Rainbow);
     applyWeatherEffects();
     if (newWeather == Magnetic)
         yVelocity = -2;
-    // 切换天气后无敌3秒，显示文字
     setInvincible(INVINCIBLE_FRAMES, true);
 }
 
@@ -510,10 +630,12 @@ QString MainWindow::weatherDescription(WeatherType weather) const
     case Rain:     return "暴雨 🌧️ 重力↑ 跳跃↓";
     case Fog:      return "大雾 🌫️ 管道渐隐";
     case Magnetic: return "磁场 🧲 按住空格下降";
+    case Rainbow:  return "彩虹 🌈 得分翻倍 无负面";
     default:       return "";
     }
 }
 
+//天气特效
 void MainWindow::applyWeatherEffects()
 {
     if (currentWeather == Rain)
@@ -528,8 +650,11 @@ void MainWindow::applyWeatherEffects()
         }
         raindrops.clear();
     }
+    if (fogOverlay)
+        fogOverlay->setVisible(false);
 }
 
+//雨丝循环
 void MainWindow::rainLoop()
 {
     if (mode != HardMode || currentWeather != Rain) return;
@@ -566,6 +691,7 @@ void MainWindow::rainLoop()
     }
 }
 
+//空格跳跃
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (gameOver) return;
@@ -586,7 +712,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
             double jump = jumpPower;
             if (mode == HardMode && currentWeather == Rain)
                 jump = -9.0;
-
             if (!gameStarted)
             {
                 gameStarted = true;
@@ -601,6 +726,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     QMainWindow::keyPressEvent(event);
 }
 
+//磁场：按键释放
 void MainWindow::keyReleaseEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Space)
